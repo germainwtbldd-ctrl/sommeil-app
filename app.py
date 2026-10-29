@@ -1,90 +1,77 @@
 import streamlit as st
+from datetime import datetime
 import time
-from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Suivi de sommeil", page_icon="😴", layout="centered")
 
-# ---------- Thème sombre ----------
 st.markdown("""
 <style>
 .stApp { background-color: #0e1117; color: #e6e6e6; }
 h1, h2, h3 { color: #cfd8ff; }
 .bigphase {
-    font-size: 42px; font-weight: bold; text-align: center;
+    font-size: 40px; font-weight: bold; text-align: center;
     padding: 25px; border-radius: 15px; margin: 15px 0;
-    background: linear-gradient(135deg, #1e2a55, #3a2f6b);
     color: #ffffff;
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("😴 Suivi de sommeil")
+st.title("😴 Suivi de sommeil (temps réel)")
+
+# ---------- Durées réelles (en minutes) ----------
+CYCLE = [
+    ("🟢 Éveil / Endormissement", 10, "#2e7d32"),
+    ("🔵 Sommeil lent léger",     30, "#1565c0"),
+    ("🟣 Sommeil lent profond",   30, "#6a1b9a"),
+    ("🟠 Sommeil paradoxal (REM)",20, "#ef6c00"),
+]
+CYCLE_MIN = sum(d for _, d, _ in CYCLE)  # 90 min
 
 # ---------- État ----------
-if "running" not in st.session_state:
-    st.session_state.running = False
 if "start_time" not in st.session_state:
     st.session_state.start_time = None
 
-# ---------- Boutons ----------
 col1, col2 = st.columns(2)
 with col1:
     if st.button("▶️ Start", use_container_width=True):
-        st.session_state.running = True
         st.session_state.start_time = datetime.now()
         st.rerun()
 with col2:
     if st.button("⏹️ Stop", use_container_width=True):
-        st.session_state.running = False
+        st.session_state.start_time = None
         st.rerun()
 
-# ---------- Cycles de sommeil (durées en secondes, accéléré) ----------
-# Un cycle réel ≈ 90 min. Ici on accélère pour la démo.
-cycles = [
-    ("🟢 Éveil / Endormissement", 8,  "#2e7d32"),
-    ("🔵 Sommeil lent léger",     12, "#1565c0"),
-    ("🟣 Sommeil lent profond",   15, "#6a1b9a"),
-    ("🟠 Sommeil paradoxal (REM)",10, "#ef6c00"),
-]
+# ---------- Fonction : phase selon minutes écoulées ----------
+def get_phase(minutes_ecoulees):
+    m = minutes_ecoulees % CYCLE_MIN
+    cumul = 0
+    for nom, duree, couleur in CYCLE:
+        cumul += duree
+        if m < cumul:
+            return nom, couleur, m, cumul - duree
+    return CYCLE[-1][0], CYCLE[-1][2], m, 0
 
-if st.session_state.running:
-    st.success("Tu dors... 😴  (simulation accélérée)")
-    place = st.empty()
-    chrono = st.empty()
-    progress = st.progress(0)
+if st.session_state.start_time:
+    start = st.session_state.start_time
+    ecoule_min = (datetime.now() - start).total_seconds() / 60
 
-    total = sum(d for _, d, _ in cycles)
-    ecoule = 0
+    nom, couleur, m_dans_cycle, debut_phase = get_phase(ecoule_min)
+    reste = CYCLE_MIN - (ecoule_min % CYCLE_MIN)
+    nb_cycles = int(ecoule_min // CYCLE_MIN) + 1
 
-    for nom, duree, couleur in cycles:
-        for s in range(duree):
-            if not st.session_state.running:
-                break
+    st.markdown(
+        f'<div class="bigphase" style="background:{couleur}">{nom}</div>',
+        unsafe_allow_html=True
+    )
 
-            # Affichage de la phase en gros
-            place.markdown(
-                f'<div class="bigphase" style="background:{couleur}">{nom}</div>',
-                unsafe_allow_html=True
-            )
+    h, m = divmod(int(ecoule_min), 60)
+    st.markdown(f"⏱️ Temps écoulé : **{h} h {m} min**")
+    st.markdown(f"🔁 Cycle n° **{nb_cycles}** — prochaine phase dans **{int(reste)} min**")
+    st.markdown(f"🕐 Début : {start.strftime('%H:%M:%S')} — Réveil estimé (1 cycle) : "
+                f"{(start.replace(second=0)).strftime('%H:%M')} + 90 min")
 
-            # Chrono depuis Start
-            if st.session_state.start_time:
-                delta = datetime.now() - st.session_state.start_time
-                mins, secs = divmod(int(delta.total_seconds()), 60)
-                chrono.markdown(f"⏱️ Temps écoulé : **{mins} min {secs} s**")
-
-            # Barre de progression du cycle
-            ecoule += 1
-            progress.progress(min(ecoule / total, 1.0))
-
-            time.sleep(1)
-
-        if not st.session_state.running:
-            break
-
-    if st.session_state.running:
-        place.markdown("### ✅ Cycle terminé — tu peux relancer Start")
-    else:
-        place.markdown("### ⏹️ Simulation arrêtée")
+    # Rafraîchissement automatique toutes les 5 secondes
+    time.sleep(5)
+    st.rerun()
 else:
-    st.info("Appuie sur **Start** pour simuler ton endormissement. 😴")
+    st.info("Appuie sur **Start** pour démarrer le suivi en temps réel. 😴")
