@@ -27,35 +27,43 @@ CYCLE = [
 ]
 CYCLE_MIN = sum(d for _, d, _ in CYCLE)  # 90 min
 
-# ---------- État ----------
-if "start_time" not in st.session_state:
-    st.session_state.start_time = None
+# ---------- Lire l'heure de début depuis l'URL ----------
+params = st.query_params
+start_str = params.get("start", None)
 
+start_time = None
+if start_str:
+    try:
+        start_time = datetime.fromisoformat(start_str)
+    except ValueError:
+        start_time = None
+
+# ---------- Boutons ----------
 col1, col2 = st.columns(2)
 with col1:
     if st.button("▶️ Start", use_container_width=True):
-        st.session_state.start_time = datetime.now()
+        now = datetime.now().isoformat(timespec="seconds")
+        st.query_params["start"] = now
         st.rerun()
 with col2:
     if st.button("⏹️ Stop", use_container_width=True):
-        st.session_state.start_time = None
+        if "start" in st.query_params:
+            del st.query_params["start"]
         st.rerun()
 
-# ---------- Fonction : phase selon minutes écoulées ----------
+# ---------- Calcul de la phase ----------
 def get_phase(minutes_ecoulees):
     m = minutes_ecoulees % CYCLE_MIN
     cumul = 0
     for nom, duree, couleur in CYCLE:
         cumul += duree
         if m < cumul:
-            return nom, couleur, m, cumul - duree
-    return CYCLE[-1][0], CYCLE[-1][2], m, 0
+            return nom, couleur
+    return CYCLE[-1][0], CYCLE[-1][2]
 
-if st.session_state.start_time:
-    start = st.session_state.start_time
-    ecoule_min = (datetime.now() - start).total_seconds() / 60
-
-    nom, couleur, m_dans_cycle, debut_phase = get_phase(ecoule_min)
+if start_time:
+    ecoule_min = (datetime.now() - start_time).total_seconds() / 60
+    nom, couleur = get_phase(ecoule_min)
     reste = CYCLE_MIN - (ecoule_min % CYCLE_MIN)
     nb_cycles = int(ecoule_min // CYCLE_MIN) + 1
 
@@ -67,10 +75,9 @@ if st.session_state.start_time:
     h, m = divmod(int(ecoule_min), 60)
     st.markdown(f"⏱️ Temps écoulé : **{h} h {m} min**")
     st.markdown(f"🔁 Cycle n° **{nb_cycles}** — prochaine phase dans **{int(reste)} min**")
-    st.markdown(f"🕐 Début : {start.strftime('%H:%M:%S')} — Réveil estimé (1 cycle) : "
-                f"{(start.replace(second=0)).strftime('%H:%M')} + 90 min")
+    st.markdown(f"🕐 Début : **{start_time.strftime('%H:%M:%S')}**")
 
-    # Rafraîchissement automatique toutes les 5 secondes
+    # Rafraîchissement auto toutes les 5 s (sans casser l'URL)
     time.sleep(5)
     st.rerun()
 else:
